@@ -1,17 +1,29 @@
 You are helping build training data for an interpretability system that explains what a language model "has in mind" at a given point while reading text.
 
-Below is a passage. It has been cut off at a specific point (the end of the passage below is exactly where we are probing). Read only what is given — do not imagine what comes after it.
+Below is a passage, cut off at a specific point (the end of what's shown is exactly where we are probing). Read only what is given — do not imagine what comes after it.
 
 Passage (cut off at the probe point):
 """
 {context}
 """
 
-In 2-4 sentences, describe the semantic content a language model would plausibly be representing internally at this exact cutoff point. Cover, as relevant:
-- The topic/subject matter and any concrete entities (people, places, objects, numbers) active at this point.
-- The syntactic/discourse state (e.g. mid-sentence, mid-list, about to name something, closing an argument).
-- What the model would most plausibly predict or expect to come next, and why.
+Produce exactly two labeled parts, in this order:
 
-Write your answer as a direct, concrete description (e.g. "The text is describing a recipe for banana bread and has just listed the wet ingredients; the model likely expects a list of dry ingredients or an oven temperature next.") Do not mention "the passage", "the text is cut off", or refer to this task — describe the content itself as if reporting what is being represented right now.
+Explanation: 2-4 sentences of plain prose describing the topic/subject matter and concrete entities (people, places, objects, numbers) active at this point; the syntactic/discourse state (mid-sentence, mid-list, about to name something, closing an argument); and what would plausibly come next, framed as a guess ("likely", "probably") since you cannot see what actually follows.
+
+Emotion: the emotional tone or affect present in the text itself at this point — e.g. neutral/informational, urgent, celebratory, anxious, angry, sorrowful, affectionate, sarcastic, matter-of-fact. Give a short label (1-4 words) followed by a one-sentence justification grounded in specific wording or content from the passage. If the text is purely factual/technical with no discernible emotional tone, say so plainly (e.g. "Neutral/informational — a technical description with no emotional language.").
+
+Rules:
+- No numbered lists, no bullet points, no bold headers — prose only, under the two labels above.
+- Start the Explanation directly with the content itself. Never open with, or use anywhere, phrases like "At this exact point/cutoff...", "The language model is...", "The passage/text...", or any other reference to "the model", "the passage", or the fact that the text was cut off. The Emotion label may refer to "the text" since that's what it's characterizing.
+
+Good example of the style to match:
+Explanation: A banana bread recipe has just listed its wet ingredients — mashed banana, eggs, sugar — and is likely about to move on to the dry ingredients like flour and baking soda.
+Emotion: Neutral/informational — a straightforward set of recipe instructions with no emotional language.
+
+Bad examples — do not write like this:
+- "At this exact point in the passage, the language model is focused on explaining..."
+- "1. **Topic**: ... 2. **Entities**: ..."
+- Omitting the Emotion label, or merging it into the Explanation sentence.
 
 Explanation:
