@@ -1,6 +1,7 @@
 from pathlib import Path
 import hashlib
 import random
+import re
 
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -246,7 +247,9 @@ def make_warmstart_schema(d_model):
     """
     Stage-1 (final warmstart) Parquet schema: Stage-0 columns
     plus the teacher-generated natural-language explanation that
-    the AV model is warm-started to imitate.
+    the AV model is warm-started to imitate, and a separate
+    emotion/affect field describing the tone of the text itself
+    at the probed position.
     """
     return pa.schema(
         [
@@ -259,8 +262,35 @@ def make_warmstart_schema(d_model):
             ("activation_layer", pa.int64()),
             ("doc_id", pa.string()),
             ("explanation", pa.string()),
+            ("emotion", pa.string()),
         ]
     )
+
+
+_EXPLANATION_EMOTION_RE = re.compile(
+    r"explanation\s*:\s*(.*?)\s*emotion\s*:\s*(.*)",
+    flags=re.IGNORECASE | re.DOTALL,
+)
+
+
+def parse_explanation_and_emotion(raw_text: str):
+    """
+    Split the teacher's raw generation into (explanation, emotion).
+
+    The prompt asks for two literal labels ("Explanation:" / "Emotion:")
+    so the fields can be recovered reliably. Falls back to treating the
+    whole output as the explanation (empty emotion) if the model didn't
+    follow the format -- this should be rare and is worth monitoring via
+    inspect_warmstart.py.
+    """
+    match = _EXPLANATION_EMOTION_RE.search(raw_text)
+
+    if match:
+        explanation = match.group(1).strip()
+        emotion = match.group(2).strip()
+        return explanation, emotion
+
+    return raw_text.strip(), ""
 
 
 def load_corpus(datagen_cfg):
@@ -626,6 +656,7 @@ def generate_explanations(config, base_path):
 
     num_rows = base_table.num_rows
     progress = tqdm(total=num_rows, desc="Stage 1: generating explanations")
+    total_malformed = 0
 
     try:
         for start in range(0, num_rows, teacher_batch_size):
@@ -664,16 +695,24 @@ def generate_explanations(config, base_path):
             )
 
             new_tokens = generated[:, encoded["input_ids"].shape[1]:]
-            explanations = tokenizer.batch_decode(
+            raw_outputs = tokenizer.batch_decode(
                 new_tokens, skip_special_tokens=True
             )
 
             rows = {name: [] for name in warmstart_schema.names}
+            malformed_count = 0
 
-            for row, explanation in zip(chunk, explanations):
+            for row, raw_output in zip(chunk, raw_outputs):
+                explanation, emotion = parse_explanation_and_emotion(raw_output)
+
+                if not emotion:
+                    malformed_count += 1
+
                 for name in warmstart_schema.names:
                     if name == "explanation":
-                        rows[name].append(explanation.strip())
+                        rows[name].append(explanation)
+                    elif name == "emotion":
+                        rows[name].append(emotion)
                     else:
                         rows[name].append(row[name])
 
@@ -682,6 +721,9 @@ def generate_explanations(config, base_path):
             )
 
             progress.update(end - start)
+            total_malformed += malformed_count
+            if malformed_count:
+                progress.set_postfix(malformed_emotion_tag=total_malformed)
 
     finally:
         progress.close()
@@ -691,6 +733,7 @@ def generate_explanations(config, base_path):
     print("Stage 1 complete.")
     print(f"Explanations written : {num_rows}")
     print(f"Teacher model         : {teacher_model_name}")
+    print(f"Rows missing an emotion tag (format not followed): {total_malformed} ({100*total_malformed/num_rows:.1f}%)")
     print(f"Output                : {output_path}")
 
     return output_path
