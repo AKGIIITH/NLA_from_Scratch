@@ -1,0 +1,121 @@
+model:
+  base_model: "Qwen/Qwen2.5-0.5B-Instruct"
+  dtype: "float16"
+  trust_remote_code: true
+
+extraction:
+  # Anthropic describes the useful region as middle-to-late.
+  strategy: "two_thirds"
+
+  # Leave null for automatic selection.
+  # If explicitly set, this overrides the strategy.
+  layer_index: null
+
+  # Number of activation vectors sampled from each document.
+  vectors_per_document: 5
+
+  # Maximum context used for activation extraction.
+  max_context_tokens: 4096
+
+prompts:
+  av_template_file: "prompts/av_prompt.txt"
+  ar_template_file: "prompts/ar_prompt.txt"
+  teacher_template_file: "prompts/teacher_prompt.txt"
+
+
+injection:
+
+  # Character used in the authors' Qwen prompt.
+  marker: "㈎"
+
+  # IMPORTANT:
+  # The actual scalar is model-dependent.
+  # We will determine/calibrate it from activation norms
+  scale: null
+
+  # AV uses the model's chat template.
+  use_chat_template: true
+  temperature: 1.0
+
+  max_new_tokens: 150
+
+datagen:
+  dataset: "openbmb/Ultra-FineWeb"
+  dataset_config: null
+  split: "en"
+  text_column: "content"
+
+  # Original paper:100,000 documents × 5 vectors = 500,000 pairs
+  num_documents: 2000
+
+  vectors_per_document: 5
+  max_context_tokens: 4096
+
+  # The teacher model is used to generate explanations for the activation vectors.
+  teacher_model: "Qwen/Qwen2.5-1.5B-Instruct"
+  teacher_max_output_tokens: 200
+  random_seed: 42
+  output_file: "data/nla_warmstart.parquet"
+
+  # Batch sizes tuned for a single Kaggle T4 (16GB). Lower these if you hit OOM.
+  extraction_batch_size: 8
+  teacher_batch_size: 8
+
+ar_sft:
+  batch_size: 256
+  micro_batch_size: 8
+  learning_rate: 2.0e-5
+  min_learning_rate_ratio: 0.1
+  warmup_ratio: 0.05
+  scheduler: "cosine"
+  epochs: 1
+  gradient_checkpointing: false
+  max_sequence_tokens: 300
+  save_directory: "checkpoints/ar_sft"
+
+av_sft:
+  batch_size: 256
+  micro_batch_size: 4
+  learning_rate: 2.0e-5
+  min_learning_rate_ratio: 0.1
+  warmup_ratio: 0.05
+  scheduler: "cosine"
+  epochs: 1
+  full_finetuning: true
+  gradient_checkpointing: true
+  save_directory: "checkpoints/av_sft"
+
+rl:
+  samples_per_prompt: 8
+
+  # Effective rollout size: 16 prompts × 8 samples = 128 samples
+  rollout_batch_size: 16
+  global_batch_size: 128
+  micro_batch_size: 2
+
+  actor_learning_rate: 1.0e-5
+  critic_learning_rate: 1.0e-5
+  kl_coefficient: 0.01
+  kl_type: "k2"
+  max_response_tokens: 150
+  max_context_tokens: 300
+
+  # Rollout generation and optimization remain synchronous:
+  # generate → score → update → next rollout
+  async_rollouts: false
+
+  num_rollouts: 100
+  save_every: 25
+  gradient_checkpointing_actor: true
+  gradient_checkpointing_critic: false
+  save_directory: "checkpoints/rl"
+
+runtime:
+  require_gpu: true
+  require_gpu_reference: true
+  num_gpus: "auto"
+
+evaluation:
+  num_examples: 256
+  random_seed: 42
+  report_real_random_gap: true

@@ -1,0 +1,8 @@
+<|im_start|>system
+You will be given a short natural-language description of some content. Read it carefully and form a single internal summary of what it describes.
+<|im_end|>
+<|im_start|>user
+{description}
+<|im_end|>
+<|im_start|>assistant
+<summary>

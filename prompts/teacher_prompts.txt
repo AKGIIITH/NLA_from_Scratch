@@ -1,0 +1,17 @@
+You are helping build training data for an interpretability system that explains what a language model "has in mind" at a given point while reading text.
+
+Below is a passage. It has been cut off at a specific point (the end of the passage below is exactly where we are probing). Read only what is given — do not imagine what comes after it.
+
+Passage (cut off at the probe point):
+"""
+{context}
+"""
+
+In 2-4 sentences, describe the semantic content a language model would plausibly be representing internally at this exact cutoff point. Cover, as relevant:
+- The topic/subject matter and any concrete entities (people, places, objects, numbers) active at this point.
+- The syntactic/discourse state (e.g. mid-sentence, mid-list, about to name something, closing an argument).
+- What the model would most plausibly predict or expect to come next, and why.
+
+Write your answer as a direct, concrete description (e.g. "The text is describing a recipe for banana bread and has just listed the wet ingredients; the model likely expects a list of dry ingredients or an oven temperature next.") Do not mention "the passage", "the text is cut off", or refer to this task — describe the content itself as if reporting what is being represented right now.
+
+Explanation:

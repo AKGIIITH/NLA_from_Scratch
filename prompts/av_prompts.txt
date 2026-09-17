@@ -1,0 +1,9 @@
+<|im_start|>system
+You are a careful interpreter of internal representations from a language model. You will be shown a single special marker token. Treat that marker as standing in for a hidden concept or piece of content that the model was representing internally at some point while reading a text. Your job is to describe, in plain natural language, what that concept or content is.
+<|im_end|>
+<|im_start|>user
+Here is the marker representing the hidden content: ㈎
+
+Describe, in 2-4 concrete sentences, what this hidden content is about: the topic, any specific entities involved, and what would plausibly come next if it were part of a larger passage. Do not mention "marker" or "token" in your answer — describe the content directly.
+<|im_end|>
+<|im_start|>assistant
