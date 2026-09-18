@@ -1,29 +1,41 @@
-You are helping build training data for an interpretability system that explains what a language model "has in mind" at a given point while reading text.
+A language model needs to predict what text comes next after a snippet which will be presented to you shortly. Identify the 4-5 most important features it would use for this prediction.
+Focus on what the language model must be "thinking about" at the point where the provided text ends. You should not need reference the fact that the text is truncated/incomplete/a prefix: the language model is causal, so only sees the prefix to what it predicts and this is implicit.
+Order features by what is most important for predicting the next tokens.
+Each feature should consist of a ~5-15 word description. When describing patterns, feel free to:
 
-Below is a passage, cut off at a specific point (the end of what's shown is exactly where we are probing). Read only what is given — do not imagine what comes after it.
+Note when patterns repeat, mirror, or continue from earlier in the text
+Show how the same pattern manifests in multiple forms
+Use probabilistic language ("often", "typically", etc.) when the model faces uncertainty
+Feel free to include specific - and relevant - textual examples inline.
+Track both what tokens are expected AND what contextual patterns determine those expectations
 
-Passage (cut off at the probe point):
-"""
-{context}
-"""
+Feature types to consider (as inspiration, not a rigid checklist):
 
-Produce exactly two labeled parts, in this order:
+Syntactic/structural constraints: "unclosed parenthesis from line 3 requires matching closing parenthesis before statement ends"
+Emotion: "the emotional tone or affect present in the text itself at this point — e.g. neutral/informational, urgent, celebratory, anxious, angry, sorrowful, affectionate, sarcastic, matter-of-fact."
+Immediate semantic expectations: "list promised three items but only two given, third item now required"
+Stylistic/register patterns: "formal academic tone maintained throughout using passive voice and latinate vocabulary"
+Narrative/argumentative momentum: "thesis statement just completed, supporting evidence or first counterargument now expected"
+Logical/causal dependencies: "causal premise about market conditions established, economic consequence must now follow"
+Domain/genre signals: "medical case history following standard SOAP format, now in Assessment section"
+Discourse/dialogue context: "speaker interrupted mid-sentence during heated argument, continuation of same thought expected"
+Repetition/continuation patterns: "same prepositional phrase structure repeating with variations like 'from a X perspective'"
+Distributional expectations: "verb ending in -ing typically followed by noun phrase in this technical documentation style"
+Epistemic/meta-textual stance: "hedging language with 'may' and 'possibly' showing continued uncertainty about empirical claims"
 
-Explanation: 2-4 sentences of plain prose describing the topic/subject matter and concrete entities (people, places, objects, numbers) active at this point; the syntactic/discourse state (mid-sentence, mid-list, about to name something, closing an argument); and what would plausibly come next, framed as a guess ("likely", "probably") since you cannot see what actually follows.
+Additionally:
+If the text contains H: and A: markers, these indicate dialogue turns between a human and an assistant in a chat transcript.
+The final feature in your explanation must describe the very end of the presented sequence: its role, what it's part of, what it implies, and how it relates to patterns established earlier, as appropriate.
+Be specific and precise. Consider how the model tracks patterns across multiple levels simultaneously-surface forms, semantic content, genre conventions, and sequential dependencies. Features can describe both immediate next-token constraints and longer-range structural expectations.
 
-Emotion: the emotional tone or affect present in the text itself at this point — e.g. neutral/informational, urgent, celebratory, anxious, angry, sorrowful, affectionate, sarcastic, matter-of-fact. Give a short label (1-4 words) followed by a one-sentence justification grounded in specific wording or content from the passage. If the text is purely factual/technical with no discernible emotional tone, say so plainly (e.g. "Neutral/informational — a technical description with no emotional language.").
+Format (use up to 150-200 words total):
+<analysis>
+[first feature—include specific examples from text when relevant]
+[second feature]
+...
+[final feature: analysis of last token, its role, and immediate constraints]
+</analysis>
 
-Rules:
-- No numbered lists, no bullet points, no bold headers — prose only, under the two labels above.
-- Start the Explanation directly with the content itself. Never open with, or use anywhere, phrases like "At this exact point/cutoff...", "The language model is...", "The passage/text...", or any other reference to "the model", "the passage", or the fact that the text was cut off. The Emotion label may refer to "the text" since that's what it's characterizing.
+Text to analyze:
 
-Good example of the style to match:
-Explanation: A banana bread recipe has just listed its wet ingredients — mashed banana, eggs, sugar — and is likely about to move on to the dry ingredients like flour and baking soda.
-Emotion: Neutral/informational — a straightforward set of recipe instructions with no emotional language.
-
-Bad examples — do not write like this:
-- "At this exact point in the passage, the language model is focused on explaining..."
-- "1. **Topic**: ... 2. **Entities**: ..."
-- Omitting the Emotion label, or merging it into the Explanation sentence.
-
-Explanation:
+<begin_text>{context}<end_text>

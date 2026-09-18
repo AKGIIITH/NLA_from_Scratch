@@ -61,6 +61,43 @@ datagen:
   extraction_batch_size: 8
   teacher_batch_size: 8
 
+  api_max_rows: 2000
+
+api_teacher:
+  provider: "google" # "google" or "groq" or "openrouter"
+  groq:
+    model: "openai/gpt-oss-120b"
+    fallback_models:
+      - "qwen/qwen3-32b"
+      - "llama-3.3-70b-versatile"
+      - "openai/gpt-oss-20b"
+    requests_per_minute: 28
+    daily_request_budget: 1000
+  
+  google:
+    model: "gemini-2.5-flash"
+    fallback_models:
+      - "gemini-2.0-flash"
+      - "gemini-1.5-flash"
+    requests_per_minute: 14
+    daily_request_budget: 1500
+  
+  openrouter:
+    model: "openai/gpt-oss-120b:free"
+    fallback_models:
+      - "meta-llama/llama-3.3-70b-instruct:free"
+      - "z-ai/glm-4.6:free"
+      - "qwen/qwen3-235b-a22b:free"
+    requests_per_minute: 18
+    daily_request_budget: 50
+
+  max_retries: 5
+  timeout_seconds: 60
+  checkpoint_every: 50 
+  
+
+
+
 ar_sft:
   batch_size: 256
   micro_batch_size: 8

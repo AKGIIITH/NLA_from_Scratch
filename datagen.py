@@ -266,31 +266,20 @@ def make_warmstart_schema(d_model):
         ]
     )
 
-
-_EXPLANATION_EMOTION_RE = re.compile(
-    r"explanation\s*:\s*(.*?)\s*emotion\s*:\s*(.*)",
-    flags=re.IGNORECASE | re.DOTALL,
+_ANALYSIS_RE = re.compile(r"<analysis>\s*(.*?)\s*</analysis>", flags=re.IGNORECASE | re.DOTALL)
+_EMOTION_LINE_RE = re.compile(
+    r"^.*\b(emotion|emotional|affect|tone|mood|sentiment)\b.*$",
+    flags=re.IGNORECASE | re.MULTILINE,
 )
 
-
 def parse_explanation_and_emotion(raw_text: str):
-    """
-    Split the teacher's raw generation into (explanation, emotion).
+    match = _ANALYSIS_RE.search(raw_text)
+    content = match.group(1).strip() if match else raw_text.strip()
 
-    The prompt asks for two literal labels ("Explanation:" / "Emotion:")
-    so the fields can be recovered reliably. Falls back to treating the
-    whole output as the explanation (empty emotion) if the model didn't
-    follow the format -- this should be rare and is worth monitoring via
-    inspect_warmstart.py.
-    """
-    match = _EXPLANATION_EMOTION_RE.search(raw_text)
+    emotion_match = _EMOTION_LINE_RE.search(content)
+    emotion = emotion_match.group(0).strip() if emotion_match else ""
 
-    if match:
-        explanation = match.group(1).strip()
-        emotion = match.group(2).strip()
-        return explanation, emotion
-
-    return raw_text.strip(), ""
+    return content, emotion
 
 
 def load_corpus(datagen_cfg):
