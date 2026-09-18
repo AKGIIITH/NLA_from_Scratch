@@ -65,6 +65,9 @@ datagen:
 
 api_teacher:
   provider: "google" # "google" or "groq" or "openrouter"
+  providers:
+    - "groq"
+    - "google"
   groq:
     model: "openai/gpt-oss-120b"
     fallback_models:

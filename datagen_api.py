@@ -120,7 +120,6 @@ def get_api_key(provider: str) -> str:
 
     # Kaggle Secrets fallback, so the notebook doesn't need to manually
     # os.environ[...] = ... before importing this module.
-    # You can replace this with your own secret management if you want to run locally without env vars.
     try:
         from kaggle_secrets import UserSecretsClient
 
@@ -302,41 +301,97 @@ def load_existing_output(output_path: Path):
     return existing, done_keys
 
 
+def build_active_providers(config) -> list:
+    """
+    Build the pool of providers this run will actually use. Reads
+    api_teacher.providers (a list, e.g. ["groq", "google"]) for multi-provider
+    mode; falls back to the single api_teacher.provider (legacy, unchanged
+    behavior) if `providers` isn't set.
+
+    A provider is silently skipped (with a printed reason) if its API key
+    env var isn't set or none of its candidate models are currently
+    available -- this lets you list providers you *might* have keys for
+    without the run failing over one missing key. Raises only if the pool
+    ends up empty.
+    """
+    api_teacher_cfg = config.get("api_teacher", {})
+    provider_names = api_teacher_cfg.get("providers") or [
+        api_teacher_cfg.get("provider", "groq")
+    ]
+
+    active = []
+    for name in provider_names:
+        if name not in PROVIDERS:
+            print(f"Skipping unknown provider '{name}' (not one of {list(PROVIDERS)})")
+            continue
+
+        provider_defaults = PROVIDERS[name]
+        provider_cfg = api_teacher_cfg.get(name, {})
+
+        try:
+            api_key = get_api_key(name)
+        except RuntimeError as e:
+            print(f"Skipping provider '{name}': {e}")
+            continue
+
+        base_url = provider_defaults["base_url"]
+        candidates = [
+            provider_cfg.get("model", provider_defaults["default_candidates"][0])
+        ] + provider_cfg.get(
+            "fallback_models", provider_defaults["default_candidates"][1:]
+        )
+
+        try:
+            model = resolve_model(name, base_url, api_key, candidates)
+        except RuntimeError as e:
+            print(f"Skipping provider '{name}': {e}")
+            continue
+
+        requests_per_minute = provider_cfg.get(
+            "requests_per_minute", provider_defaults["default_requests_per_minute"]
+        )
+        daily_request_budget = provider_cfg.get(
+            "daily_request_budget", provider_defaults["default_daily_request_budget"]
+        )
+
+        active.append({
+            "name": name,
+            "base_url": base_url,
+            "api_key": api_key,
+            "model": model,
+            "rate_limiter": RateLimiter(requests_per_minute),
+            "daily_budget": daily_request_budget,
+            "calls_made": 0,
+            "failed": 0,
+        })
+
+    if not active:
+        raise RuntimeError(
+            "No usable providers -- check that at least one of the "
+            "configured providers has its API key set and a resolvable model."
+        )
+
+    return active
+
+
 def generate_explanations_via_api(config, base_path):
     """
     Stage 1 (API version): same job as datagen.py's generate_explanations,
-    but the teacher call goes to a hosted API (Groq / Google / OpenRouter)
-    instead of a local model.
+    but the teacher call goes to one or more hosted APIs (Groq / Google /
+    OpenRouter) instead of a local model.
+
+    Multi-provider mode (api_teacher.providers is a list): rows are handed
+    out round-robin across the active providers, so their daily budgets
+    stack instead of being limited by a single account. If a provider fails
+    a row after its own retries, the same row is immediately retried on the
+    other active providers before being recorded as failed -- a row only
+    ends up empty if every active provider struck out on it.
     """
     datagen_cfg = config["datagen"]
     api_teacher_cfg = config.get("api_teacher", {})
 
-    provider = api_teacher_cfg.get("provider", "groq")
-    if provider not in PROVIDERS:
-        raise ValueError(
-            f"Unknown api_teacher.provider '{provider}'. "
-            f"Choose one of: {list(PROVIDERS)}"
-        )
+    providers = build_active_providers(config)
 
-    provider_defaults = PROVIDERS[provider]
-    provider_cfg = api_teacher_cfg.get(provider, {})
-
-    base_url = provider_defaults["base_url"]
-    api_key = get_api_key(provider)
-
-    candidates = [
-        provider_cfg.get("model", provider_defaults["default_candidates"][0])
-    ] + provider_cfg.get(
-        "fallback_models", provider_defaults["default_candidates"][1:]
-    )
-    model = resolve_model(provider, base_url, api_key, candidates)
-
-    requests_per_minute = provider_cfg.get(
-        "requests_per_minute", provider_defaults["default_requests_per_minute"]
-    )
-    daily_request_budget = provider_cfg.get(
-        "daily_request_budget", provider_defaults["default_daily_request_budget"]
-    )
     max_retries = api_teacher_cfg.get("max_retries", 5)
     timeout_seconds = api_teacher_cfg.get("timeout_seconds", 60)
     checkpoint_every = api_teacher_cfg.get("checkpoint_every", 50)
@@ -364,51 +419,72 @@ def generate_explanations_via_api(config, base_path):
         remaining_budget = max(0, max_rows - len(done_keys))
         pending_rows = pending_rows[:remaining_budget]
 
-    print(f"Provider                        : {provider}")
+    total_daily_budget = sum(p["daily_budget"] for p in providers)
+
+    budget_breakdown = " + ".join(
+        f"{p['name']}={p['daily_budget']}" for p in providers
+    )
+    print(f"Active providers                : {[p['name'] + ':' + p['model'] for p in providers]}")
+    print(f"Combined daily request budget   : {total_daily_budget} ({budget_breakdown})")
     print(f"Total activation rows available : {len(all_rows)}")
     print(f"Already done (resumed)          : {len(done_keys)}")
     print(f"Pending this run                : {len(pending_rows)}")
-    print(f"Daily request budget            : {daily_request_budget} "
-          f"(check the provider's current limits for this model -- these shift over time)")
 
     if not pending_rows:
         print("Nothing to do -- output already complete.")
         return output_path
 
-    rate_limiter = RateLimiter(requests_per_minute)
     new_records = []
-    calls_made = 0
-    failed = 0
+    total_failed = 0
+    provider_idx = 0  # round-robin pointer
 
-    progress = tqdm(total=len(pending_rows), desc=f"Stage 1 ({provider}): generating explanations")
+    progress = tqdm(total=len(pending_rows), desc="Stage 1 (API): generating explanations")
 
     try:
         for row in pending_rows:
-            if calls_made >= daily_request_budget:
+            available = [p for p in providers if p["calls_made"] < p["daily_budget"]]
+            if not available:
                 print(
-                    f"\nHit the daily request budget ({daily_request_budget}). "
+                    "\nAll providers have hit their daily request budget. "
                     "Stopping here -- rerun this script tomorrow (or after "
-                    "your quota resets) to continue; already-done rows will "
+                    "your quotas reset) to continue; already-done rows will "
                     "be skipped automatically."
                 )
                 break
 
             prompt = template.format(context=row["detokenized_text_truncated"])
 
-            rate_limiter.wait()
-            raw_output = call_chat_api(
-                base_url=base_url,
-                api_key=api_key,
-                model=model,
-                prompt=prompt,
-                max_tokens=teacher_max_output_tokens,
-                timeout=timeout_seconds,
-                max_retries=max_retries,
-            )
-            calls_made += 1
+            # Try the round-robin-assigned provider first, then fall back
+            # through the rest of the pool (in rotation order) before
+            # giving up on this row.
+            ordered = providers[provider_idx:] + providers[:provider_idx]
+            provider_idx = (provider_idx + 1) % len(providers)
+
+            raw_output = None
+            used_provider = None
+            for p in ordered:
+                if p["calls_made"] >= p["daily_budget"]:
+                    continue
+
+                p["rate_limiter"].wait()
+                raw_output = call_chat_api(
+                    base_url=p["base_url"],
+                    api_key=p["api_key"],
+                    model=p["model"],
+                    prompt=prompt,
+                    max_tokens=teacher_max_output_tokens,
+                    timeout=timeout_seconds,
+                    max_retries=max_retries,
+                )
+                p["calls_made"] += 1
+                used_provider = p["name"]
+
+                if raw_output is not None:
+                    break
+                p["failed"] += 1  # this provider struck out; try the next one
 
             if raw_output is None:
-                failed += 1
+                total_failed += 1
                 explanation, emotion = "", ""
             else:
                 explanation, emotion = parse_explanation_and_emotion(raw_output)
@@ -419,7 +495,11 @@ def generate_explanations_via_api(config, base_path):
             new_records.append(record)
 
             progress.update(1)
-            progress.set_postfix(failed=failed, calls=calls_made)
+            progress.set_postfix(
+                failed=total_failed,
+                calls=sum(p["calls_made"] for p in providers),
+                via=used_provider,
+            )
 
             if len(new_records) % checkpoint_every == 0:
                 _write_checkpoint(existing_df, new_records, warmstart_schema, output_path)
@@ -431,11 +511,10 @@ def generate_explanations_via_api(config, base_path):
 
     print()
     print("Stage 1 (API) complete for this run.")
-    print(f"Provider                : {provider}")
-    print(f"Model                   : {model}")
-    print(f"API calls made this run : {calls_made}")
-    print(f"Failed rows (empty explanation, worth re-running) : {failed}")
-    print(f"Output                  : {final_path}")
+    for p in providers:
+        print(f"  {p['name']:12s} ({p['model']}): {p['calls_made']} calls, {p['failed']} failed")
+    print(f"Rows with no explanation from any provider : {total_failed}")
+    print(f"Output                                      : {final_path}")
 
     return final_path
 
