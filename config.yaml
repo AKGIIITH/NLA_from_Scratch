@@ -53,7 +53,7 @@ datagen:
 
   # The teacher model is used to generate explanations for the activation vectors.
   teacher_model: "Qwen/Qwen2.5-1.5B-Instruct"
-  teacher_max_output_tokens: 200
+  teacher_max_output_tokens: 350
   random_seed: 42
   output_file: "data/nla_warmstart.parquet"
 
